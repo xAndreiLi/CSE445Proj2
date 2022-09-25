@@ -2,75 +2,84 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace CSE472Project2
 {
     public class MultiCellBuffer
     {
-        public EventHandler<int>? OrderSent;     // OrderSent event raised when TicketAgent Thread writes to buffer
 
         private OrderClass.OrderObject[] buffer;    // Array containing OrderObjects from TicketAgents for Cruise
-        private ReaderWriterLockSlim[] readWriteLocks; // Array of size of buffer allowing for two writers to write to different cells
-        private SemaphoreSlim semaphore;    // No. of available cells for writing, decremented upon write, incremented upon read.
+        private List<ReaderWriterLockSlim> readerWriterLocks; // Array of size of buffer allowing for two writers to write to different cells
+        // private ReaderWriterLockSlim readWriteLock; 
+        private SemaphoreSlim semaphore;    // No. of available cells for writing, incremented upon write, decremented upon read.
         private int size;
         private string name;
+        private int wrote;
+        private int read;
         public MultiCellBuffer(string name, int size)
         {
             buffer = new OrderClass.OrderObject[size];
-            readWriteLocks = new ReaderWriterLockSlim[size];
+            readerWriterLocks = new List<ReaderWriterLockSlim>();
             for(int i = 0; i < size; i++)
             {
-                readWriteLocks[i] = new ReaderWriterLockSlim();
+                readerWriterLocks.Add(new ReaderWriterLockSlim());
             }
-            semaphore = new SemaphoreSlim(initialCount: 0, maxCount: 2);
+            //readWriteLock = new ReaderWriterLockSlim();
+            semaphore = new SemaphoreSlim(initialCount: size, maxCount: size);
             this.size = size;
-            this.name = name;   
+            this.name = name;
+            wrote = -1;
+            read = 0;
         }
 
-        public void WriteCell(OrderClass.OrderObject order)
+        public int WriteCell(OrderClass.OrderObject order)
         {
             // Called by TicketAgent Threads to write an OrderObject to a cell
-
-            int toRelease = 0;  // Remember which cell was written to
             // Block thread until there is an available cell
+            
             semaphore.Wait();
-            // Check if cell i is available
-            for(int i = 0; i < size; i++)
+            wrote++;
+            // Enter cells in order till full
+            for (int i = 0; i<size; i++)
             {
-                if (readWriteLocks[i].TryEnterWriteLock(1))
+                if (readerWriterLocks[i].TryEnterWriteLock(5))
                 {
-                    // If so, write order to cell
-                    toRelease = i;
-                    buffer[0] = order;
+                    buffer[i] = order;
+                    readerWriterLocks[i].ExitWriteLock();
+                    // Release lock but do not release semaphore (wait for reader)
+                    return i;
                 }
-                // If not, loop to cell i+1
             }
-            // Semaphore makes sure that there is a cell available
-            readWriteLocks[toRelease].ExitWriteLock();
-            // Release lock but do not release semaphore (wait for reader)
+            return -1;
         }
 
         public OrderClass.OrderObject ReadCell(int index)
         {
             // Called by Cruise for OrderProcess Thread to read buffer
-            readWriteLocks[index].EnterReadLock();
+            readerWriterLocks[index].EnterReadLock();
             try
             {
                 return buffer[index];
             }
             finally
             {
-                // Finally release semaphore after reading
-                semaphore.Release();
-                readWriteLocks[index].ExitReadLock();
+                readerWriterLocks[index].ExitReadLock();
+                read++;
+                // Finally release semaphore after reading all cells
+                if (read == size)
+                {
+                    Console.WriteLine("Readers Finished");
+                    read = 0;
+                    wrote = -1;
+                    semaphore.Release();
+                    Thread.Sleep(10);
+                    semaphore.Release();
+                    Thread.Sleep(10);
+                    semaphore.Release();
+                }
             }
-        }
-
-        protected virtual void OnOrderSent(int index)
-        {
-            // OrderSent Event Handler Invocation, sends index in Buffer to read to Cruise
-            OrderSent?.Invoke(this, index);
         }
     }
 }

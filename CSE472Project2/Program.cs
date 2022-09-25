@@ -9,19 +9,33 @@ namespace CSE472Project2
     public class Program
     {
         public static Random random = new Random();
+        public static int K = 1, N = 5;  // No. of Cruises / Agents
+        public static MultiCellBuffer buffer = new MultiCellBuffer("buffer1", 3);
+
+        public static List<ICruise> cruiseList = new List<ICruise>();
+        public static List<TicketAgent> agentList = new List<TicketAgent>();
+
         // Driver class for Cruise Ship Ticket Agent System
         static void Main(string[] args)
         {
             // Initialize Cruise Object/Thread
             Console.WriteLine("Starting cruises");
-            int K = 2;  // No. of Cruises
-            for(int i = 0; i < K; i++)
+            Cruise1 cruise1 = new Cruise1("Cruise1");
+            Thread cruiseThread1 = new Thread(cruise1.StartCruise);
+            cruiseThread1.Name = cruise1.ToString();
+            cruiseList.Add(cruise1);
+
+            for(int i = 0; i < N; i++)
             {
-                Cruise cruise = new Cruise($"cruise{i+1}");
-                Thread cruiseThread = new Thread(cruise.StartCruise);
-                cruiseThread.Start();
-                cruiseThread.Name = cruise.ToString();
+                TicketAgent agent = new TicketAgent($"TicketAgent{i + 1}", i*5);
+                agentList.Add(agent);
+                Thread agentThread = new Thread(agent.StartAgent);
+                agentThread.Name = $"TicketAgent{i + 1}";
+                agentThread.Start();
             }
+
+            cruiseThread1.Start();
+
 
             while (K > 0)
             {
